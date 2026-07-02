@@ -11,16 +11,16 @@ The Kaggle Disease Symptom Prediction dataset is commonly used for demos, but it
 ## Milestone 1 deliverables
 
 - Load and validate the symptom dataset.
-- Train baseline supervised classifiers:
-  - Decision Tree with overfitting controls.
-  - Random Forest for comparison.
+- Binary-encode symptom columns.
+- Perform an 80/20 stratified train/test split.
+- Train a KNN baseline classifier.
 - Evaluate with:
   - Accuracy.
-  - Macro-F1.
-  - Top-3 accuracy.
+  - Macro precision.
+  - Macro recall.
   - Per-class precision, recall, and F1.
-- Save the best model and evaluation report under `outputs/`.
+- Save the KNN baseline model and evaluation report under `outputs/`.
 
 ## Explainability note
 
-Decision Tree paths can support interpretability, but raw feature names are not enough for a user-facing explanation. Later milestones should convert model paths into cleaned text such as: "The model weighted fever, cough, and fatigue as important symptoms for this prediction."
+Decision Tree paths, top-3 outputs, severity weights, and user-facing explanations are not part of milestone 1. They should be handled in later milestones.

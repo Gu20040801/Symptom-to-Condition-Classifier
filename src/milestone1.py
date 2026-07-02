@@ -9,17 +9,13 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any
-
 import joblib
-import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, classification_report, f1_score, top_k_accuracy_score
-from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
+from sklearn.metrics import accuracy_score, classification_report, precision_score, recall_score
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder
-from sklearn.tree import DecisionTreeClassifier
 
 
 ONE_HOT_TARGET_COLUMN = "prognosis"
@@ -37,12 +33,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--test", default=None, help="Optional path to one-hot Testing.csv.")
     parser.add_argument("--output-dir", default="outputs", help="Directory for reports and model artifacts.")
-    parser.add_argument(
-        "--n-jobs",
-        type=int,
-        default=1,
-        help="Parallel jobs for model search. Use -1 for all cores if your environment allows it.",
-    )
+    parser.add_argument("--k", type=int, default=5, help="Number of neighbors for the KNN baseline.")
     parser.add_argument(
         "--drop-duplicates",
         action="store_true",
@@ -135,74 +126,13 @@ def split_features_target(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
     return x, y
 
 
-def choose_cv_splits(y_train: pd.Series) -> int:
-    smallest_class_count = int(y_train.value_counts().min())
-    if smallest_class_count < 2:
-        raise ValueError(
-            "Each disease class needs at least 2 training rows for stratified evaluation. "
-            f"Smallest class has {smallest_class_count}."
-        )
-    return min(5, smallest_class_count)
-
-
-def build_models(n_jobs: int, cv_splits: int) -> dict[str, GridSearchCV]:
-    cv = StratifiedKFold(n_splits=cv_splits, shuffle=True, random_state=RANDOM_STATE)
-
-    decision_tree = Pipeline(
-        [
-            (
-                "model",
-                DecisionTreeClassifier(random_state=RANDOM_STATE, class_weight="balanced"),
-            )
-        ]
-    )
-    decision_tree_grid = {
-        "model__max_depth": [6, 8, 12, 16, 20, 24],
-        "model__min_samples_leaf": [1, 2, 5],
-        "model__ccp_alpha": [0.0, 0.001, 0.005, 0.01],
-    }
-
-    random_forest = Pipeline(
-        [
-            (
-                "model",
-                RandomForestClassifier(
-                    random_state=RANDOM_STATE,
-                    class_weight="balanced",
-                    n_jobs=n_jobs,
-                ),
-            )
-        ]
-    )
-    random_forest_grid = {
-        "model__n_estimators": [200],
-        "model__max_depth": [8, 12, None],
-        "model__min_samples_leaf": [1, 2, 5],
-    }
-
-    return {
-        "decision_tree": GridSearchCV(
-            decision_tree,
-            decision_tree_grid,
-            scoring="f1_macro",
-            cv=cv,
-            n_jobs=n_jobs,
-            refit=True,
-        ),
-        "random_forest": GridSearchCV(
-            random_forest,
-            random_forest_grid,
-            scoring="f1_macro",
-            cv=cv,
-            n_jobs=n_jobs,
-            refit=True,
-        ),
-    }
+def build_knn_model(k: int) -> Pipeline:
+    return Pipeline([("model", KNeighborsClassifier(n_neighbors=k))])
 
 
 def encode_labels(
     y_train: pd.Series, y_test: pd.Series
-) -> tuple[np.ndarray, np.ndarray, LabelEncoder]:
+) -> tuple[pd.Series, pd.Series, LabelEncoder]:
     encoder = LabelEncoder()
     y_train_encoded = encoder.fit_transform(y_train)
 
@@ -214,33 +144,24 @@ def encode_labels(
     return y_train_encoded, y_test_encoded, encoder
 
 
-def top3_accuracy(model: Pipeline, x_test: pd.DataFrame, y_test_encoded: np.ndarray) -> float | None:
-    if not hasattr(model, "predict_proba"):
-        return None
-
-    probabilities = model.predict_proba(x_test)
-    labels = np.arange(probabilities.shape[1])
-    k = min(3, probabilities.shape[1])
-    return float(top_k_accuracy_score(y_test_encoded, probabilities, k=k, labels=labels))
-
-
 def evaluate_model(
-    name: str,
-    model: GridSearchCV,
+    model: Pipeline,
     x_test: pd.DataFrame,
-    y_test_encoded: np.ndarray,
+    y_test_encoded: pd.Series,
     label_encoder: LabelEncoder,
-) -> tuple[dict[str, Any], pd.DataFrame]:
+) -> tuple[dict[str, object], pd.DataFrame]:
     predictions = model.predict(x_test)
-    best_estimator = model.best_estimator_
 
     metrics = {
-        "model": name,
+        "model": "knn_baseline",
         "accuracy": float(accuracy_score(y_test_encoded, predictions)),
-        "macro_f1": float(f1_score(y_test_encoded, predictions, average="macro")),
-        "top_3_accuracy": top3_accuracy(best_estimator, x_test, y_test_encoded),
-        "best_cv_macro_f1": float(model.best_score_),
-        "best_params": model.best_params_,
+        "macro_precision": float(
+            precision_score(y_test_encoded, predictions, average="macro", zero_division=0)
+        ),
+        "macro_recall": float(
+            recall_score(y_test_encoded, predictions, average="macro", zero_division=0)
+        ),
+        "k": model.named_steps["model"].n_neighbors,
     }
 
     report = classification_report(
@@ -251,7 +172,7 @@ def evaluate_model(
         zero_division=0,
     )
     report_df = pd.DataFrame(report).transpose().reset_index(names="class")
-    report_df.insert(0, "model", name)
+    report_df.insert(0, "model", "knn_baseline")
 
     return metrics, report_df
 
@@ -297,27 +218,15 @@ def main() -> None:
     )
     y_train_encoded, y_test_encoded, label_encoder = encode_labels(y_train, y_test)
 
-    all_metrics: list[dict[str, Any]] = []
-    all_reports: list[pd.DataFrame] = []
-    cv_splits = choose_cv_splits(y_train)
-    trained_models = build_models(args.n_jobs, cv_splits)
-
-    for name, search in trained_models.items():
-        print(f"Training {name}...")
-        search.fit(x_train, y_train_encoded)
-        metrics, report_df = evaluate_model(name, search, x_test, y_test_encoded, label_encoder)
-        all_metrics.append(metrics)
-        all_reports.append(report_df)
-        top_3 = metrics["top_3_accuracy"]
-        top_3_text = "n/a" if top_3 is None else f"{top_3:.3f}"
-        print(
-            f"{name}: accuracy={metrics['accuracy']:.3f}, "
-            f"macro_f1={metrics['macro_f1']:.3f}, "
-            f"top_3_accuracy={top_3_text}"
-        )
-
-    best = max(all_metrics, key=lambda item: item["macro_f1"])
-    best_model = trained_models[best["model"]].best_estimator_
+    model = build_knn_model(args.k)
+    print("Training knn_baseline...")
+    model.fit(x_train, y_train_encoded)
+    metrics, report_df = evaluate_model(model, x_test, y_test_encoded, label_encoder)
+    print(
+        f"knn_baseline: accuracy={metrics['accuracy']:.3f}, "
+        f"macro_precision={metrics['macro_precision']:.3f}, "
+        f"macro_recall={metrics['macro_recall']:.3f}"
+    )
 
     with (output_dir / "metrics.json").open("w", encoding="utf-8") as file:
         json.dump(
@@ -329,27 +238,23 @@ def main() -> None:
                     "Kaggle symptom data is clean and simplified; results do not prove "
                     "clinical validity on real medical records."
                 ),
-                "metrics": all_metrics,
-                "best_model": best["model"],
+                "metrics": metrics,
             },
             file,
             indent=2,
         )
 
-    pd.concat(all_reports, ignore_index=True).to_csv(
-        output_dir / "classification_report.csv", index=False
-    )
+    report_df.to_csv(output_dir / "classification_report.csv", index=False)
     joblib.dump(
         {
-            "model": best_model,
+            "model": model,
             "label_encoder": label_encoder,
             "feature_columns": list(x_train.columns),
             "disclaimer": "Educational demo only. Not medical advice.",
         },
-        output_dir / "best_model.joblib",
+        output_dir / "knn_baseline.joblib",
     )
 
-    print(f"Best model by test macro-F1: {best['model']}")
     print(f"Wrote outputs to {output_dir}")
 
 

@@ -15,15 +15,13 @@ The current milestone 1 implementation includes:
 - A main training script: `src/milestone1.py`.
 - Support for loading the Kaggle Disease Symptom Prediction `dataset.csv` file.
 - Support for converting raw symptom columns into binary model features.
-- Support for training two supervised classification models:
-  - Decision Tree
-  - Random Forest
+- Support for training a KNN baseline model.
 - Support for evaluating models with multiple metrics:
   - Accuracy
-  - Macro-F1
-  - Top-3 accuracy
+  - Macro precision
+  - Macro recall
   - Per-class precision / recall / F1
-- Support for saving evaluation results and the best trained model.
+- Support for saving evaluation results and the trained KNN baseline model.
 - A medical safety disclaimer in the README and output files.
 - Documentation noting that the Kaggle dataset is clean and simplified, so the project should not overclaim that the model represents performance on real clinical records.
 
@@ -45,7 +43,7 @@ group_310/
 ├── outputs/
 │   ├── metrics.json
 │   ├── classification_report.csv
-│   └── best_model.joblib
+│   └── knn_baseline.joblib
 └── src/
     └── milestone1.py
 ```
@@ -65,11 +63,9 @@ The script follows this workflow:
 3. Convert the raw symptom columns into binary model features.
 4. Create a stratified train/test split from the dataset.
 5. Use `LabelEncoder` to convert disease labels into numeric labels for model training.
-6. Use cross-validation to search for better model parameters.
-7. Train a Decision Tree model and a Random Forest model.
-8. Evaluate both models.
-9. Select the best model based on test macro-F1.
-10. Save the metrics, classification report, and model artifact.
+6. Train a KNN baseline model.
+7. Evaluate the baseline model.
+8. Save the metrics, classification report, and model artifact.
 
 The script also supports the alternate one-hot Kaggle format with `Training.csv`, optional `Testing.csv`, and a target column named `prognosis`.
 
@@ -104,38 +100,20 @@ The Kaggle dataset is useful for a demo, but it is clean, simplified, and may be
 
 ## 6. Model Design
 
-### Decision Tree
+Milestone 1 uses a KNN baseline model. This matches the project timeline: the first milestone focuses on a complete and reproducible data pipeline plus a simple baseline model.
 
-The Decision Tree model is included because it is interpretable. This is useful for later explanation features.
-
-However, Decision Trees can overfit easily, so the code tunes these parameters:
-
-- `max_depth`
-- `min_samples_leaf`
-- `ccp_alpha`
-
-### Random Forest
-
-The Random Forest model is included as a stronger comparison baseline. It is usually more stable than a single Decision Tree, although it is less directly interpretable.
-
-Milestone 1 does not assume one model is automatically better. The models are compared using evaluation metrics.
+Decision Tree, Random Forest, feature importance, top-3 output, and explainability are intentionally left for later phases.
 
 ## 7. Evaluation Design
 
-The TA feedback noted that accuracy alone may be misleading, so milestone 1 uses more than accuracy.
+The TA feedback noted that accuracy alone may be misleading, so milestone 1 reports more than accuracy.
 
 Current evaluation metrics:
 
 - `accuracy`: Overall prediction correctness.
-- `macro_f1`: Gives equal weight to each class, which is useful for multi-disease classification.
-- `top_3_accuracy`: Relevant because the planned system outputs the top 3 possible conditions.
+- `macro_precision`: Gives equal weight to each class when measuring precision.
+- `macro_recall`: Gives equal weight to each class when measuring recall.
 - `classification_report.csv`: Stores precision, recall, and F1 for each disease class.
-
-Model selection rule:
-
-```text
-best model = highest test macro-F1
-```
 
 ## 8. Outputs
 
@@ -145,14 +123,14 @@ After running the script, these files are generated:
 outputs/
 ├── metrics.json
 ├── classification_report.csv
-└── best_model.joblib
+└── knn_baseline.joblib
 ```
 
 File purposes:
 
 - `metrics.json`: Stores the main model scores, best parameters, disclaimer, and dataset limitation.
 - `classification_report.csv`: Stores per-class precision, recall, and F1.
-- `best_model.joblib`: Stores the best model, label encoder, and feature column order for later milestones.
+- `knn_baseline.joblib`: Stores the trained KNN baseline, label encoder, and feature column order for later milestones.
 
 ## 9. How To Run
 
@@ -190,6 +168,8 @@ The following items are not part of milestone 1:
 - No symptom input interface for users.
 - No real medical diagnosis functionality.
 - No user-facing explanation text generator.
+- No Decision Tree or Random Forest model.
+- No top-3 output.
 - No visualization charts.
 - No deployment.
 - No real clinical records.
@@ -199,7 +179,8 @@ The following items are not part of milestone 1:
 Possible next steps for later milestones:
 
 - Add a simple prediction script that accepts symptoms and outputs top-3 conditions.
-- Load `best_model.joblib` for inference.
+- Train Decision Tree and Random Forest models.
+- Load a saved model artifact for inference.
 - Convert raw feature names into readable explanations.
 - Add a clearer explanation display for Decision Tree predictions.
 - Add a confusion matrix and model comparison plots.

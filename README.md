@@ -45,15 +45,12 @@ Outputs are written to `outputs/`:
 
 - `metrics.json`
 - `classification_report.csv`
-- `best_model.joblib`
+- `knn_baseline.joblib`
 
 ## Models
 
-The milestone compares:
-
-- Decision Tree: interpretable, with `max_depth`, `min_samples_leaf`, and cost-complexity pruning to reduce overfitting.
-- Random Forest: stronger ensemble baseline, compared carefully against the tree.
+Milestone 1 trains a KNN baseline model. Decision Tree and Random Forest are left for the later model improvement phase.
 
 ## Evaluation
 
-Accuracy alone can hide poor performance on less common diseases, so milestone 1 also reports macro-F1, per-class precision/recall/F1, and top-3 accuracy because the planned interface returns top-3 conditions.
+Milestone 1 reports accuracy, macro precision, macro recall, and a per-class classification report. Top-3 output and explainability are left for later milestones.
