@@ -128,7 +128,7 @@ outputs/
 
 File purposes:
 
-- `metrics.json`: Stores the main model scores, best parameters, disclaimer, and dataset limitation.
+- `metrics.json`: Stores the main model scores, the k value used, disclaimer, and dataset limitation. 
 - `classification_report.csv`: Stores per-class precision, recall, and F1.
 - `knn_baseline.joblib`: Stores the trained KNN baseline, label encoder, and feature column order for later milestones.
 
@@ -152,12 +152,6 @@ For the alternate one-hot Kaggle format:
 
 ```bash
 python src/milestone1.py --train data/Training.csv --test data/Testing.csv
-```
-
-The script uses single-core training by default because this is more reliable in restricted environments. On a normal laptop, training can be sped up with:
-
-```bash
-python src/milestone1.py --train data/dataset.csv --n-jobs -1
 ```
 
 ## 10. What Is Not Included In Milestone 1
