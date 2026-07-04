@@ -39,8 +39,6 @@ The script also supports the alternate one-hot Kaggle format with `Training.csv`
 python src/milestone1.py --train data/Training.csv --test data/Testing.csv
 ```
 
-The script defaults to single-core training because it is more reliable in restricted environments. On a normal laptop, you can add `--n-jobs -1` to use all cores.
-
 Outputs are written to `outputs/`:
 
 - `metrics.json`
