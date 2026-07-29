@@ -43,6 +43,7 @@ Outputs are written to `outputs/`:
 
 - `metrics.json`
 - `classification_report.csv`
+- `confusion_matrix.svg`
 - `knn_baseline.joblib`
 
 ## Models

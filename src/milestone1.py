@@ -7,11 +7,19 @@ advice and must not be used for real diagnosis.
 from __future__ import annotations
 
 import argparse
+from html import escape
 import json
 from pathlib import Path
+
 import joblib
 import pandas as pd
-from sklearn.metrics import accuracy_score, classification_report, precision_score, recall_score
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+    precision_score,
+    recall_score,
+)
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
@@ -149,7 +157,7 @@ def evaluate_model(
     x_test: pd.DataFrame,
     y_test_encoded: pd.Series,
     label_encoder: LabelEncoder,
-) -> tuple[dict[str, object], pd.DataFrame]:
+) -> tuple[dict[str, object], pd.DataFrame, pd.Series]:
     predictions = model.predict(x_test)
 
     metrics = {
@@ -174,7 +182,72 @@ def evaluate_model(
     report_df = pd.DataFrame(report).transpose().reset_index(names="class")
     report_df.insert(0, "model", "knn_baseline")
 
-    return metrics, report_df
+    return metrics, report_df, predictions
+
+
+def save_confusion_matrix(
+    y_test_encoded: pd.Series,
+    predictions: pd.Series,
+    label_encoder: LabelEncoder,
+    output_path: Path,
+) -> None:
+    matrix = confusion_matrix(y_test_encoded, predictions)
+    labels = list(label_encoder.classes_)
+    cell_size = 18
+    label_width = 250
+    top_margin = 260
+    width = label_width + len(labels) * cell_size + 30
+    height = top_margin + len(labels) * cell_size + 40
+    max_value = int(matrix.max()) or 1
+
+    svg_lines = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}">',
+        '<rect width="100%" height="100%" fill="white"/>',
+        '<text x="20" y="32" font-family="Arial, sans-serif" font-size="22" '
+        'font-weight="700">KNN Baseline Confusion Matrix</text>',
+        '<text x="20" y="58" font-family="Arial, sans-serif" font-size="13" '
+        'fill="#444">Rows are actual classes; columns are predicted classes.</text>',
+    ]
+
+    for index, label in enumerate(labels):
+        x = label_width + index * cell_size + 12
+        y = top_margin - 8
+        svg_lines.append(
+            f'<text x="{x}" y="{y}" transform="rotate(-60 {x} {y})" '
+            'font-family="Arial, sans-serif" font-size="10" text-anchor="start">'
+            f"{escape(label)}</text>"
+        )
+
+    for row_index, label in enumerate(labels):
+        y = top_margin + row_index * cell_size + 13
+        svg_lines.append(
+            f'<text x="{label_width - 8}" y="{y}" font-family="Arial, sans-serif" '
+            f'font-size="10" text-anchor="end">{escape(label)}</text>'
+        )
+
+    for row_index in range(len(labels)):
+        for column_index in range(len(labels)):
+            value = int(matrix[row_index, column_index])
+            intensity = value / max_value
+            red = int(250 - 205 * intensity)
+            green = int(248 - 95 * intensity)
+            blue = int(245 - 155 * intensity)
+            x = label_width + column_index * cell_size
+            y = top_margin + row_index * cell_size
+            svg_lines.append(
+                f'<rect x="{x}" y="{y}" width="{cell_size}" height="{cell_size}" '
+                f'fill="rgb({red},{green},{blue})" stroke="#d6dde8" stroke-width="0.5"/>'
+            )
+            if value:
+                svg_lines.append(
+                    f'<text x="{x + cell_size / 2}" y="{y + 12}" '
+                    'font-family="Arial, sans-serif" font-size="8" text-anchor="middle" '
+                    f'fill="#102a43">{value}</text>'
+                )
+
+    svg_lines.append("</svg>")
+    output_path.write_text("\n".join(svg_lines), encoding="utf-8")
 
 
 def make_train_test_data(
@@ -221,7 +294,9 @@ def main() -> None:
     model = build_knn_model(args.k)
     print("Training knn_baseline...")
     model.fit(x_train, y_train_encoded)
-    metrics, report_df = evaluate_model(model, x_test, y_test_encoded, label_encoder)
+    metrics, report_df, predictions = evaluate_model(
+        model, x_test, y_test_encoded, label_encoder
+    )
     print(
         f"knn_baseline: accuracy={metrics['accuracy']:.3f}, "
         f"macro_precision={metrics['macro_precision']:.3f}, "
@@ -245,6 +320,12 @@ def main() -> None:
         )
 
     report_df.to_csv(output_dir / "classification_report.csv", index=False)
+    save_confusion_matrix(
+        y_test_encoded,
+        predictions,
+        label_encoder,
+        output_dir / "confusion_matrix.svg",
+    )
     joblib.dump(
         {
             "model": model,
